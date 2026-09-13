@@ -2,3 +2,7 @@ node_modules/
 .npm-cache-tmp/
 lib/.client.raw.js
 *.log
+
+# ad-hoc verification scratch files (never part of the package)
+.check-*.mjs
+.verify-*.mjs
