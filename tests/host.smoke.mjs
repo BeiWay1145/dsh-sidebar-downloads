@@ -33,6 +33,14 @@ writeFileSync(join(TASKS, 'bom-jkl.json'), '\uFEFF' + JSON.stringify({
   startedAt: Date.now(), endedAt: Date.now(),
 }))
 
+// A stale `--no-wait` record exactly as aria2-dl.js writes it: a GID and
+// all-zero counters. The RPC stub below stands in for a running engine.
+writeFileSync(join(TASKS, 'aria2-stale.json'), JSON.stringify({
+  name: 'big.iso', url: 'https://example.com/big.iso', gid: 'deadbeef',
+  outPath: join(HOME, 'big.iso'), status: 'starting', startedAt: Date.now(),
+  percent: 0, downloaded: 0, total: 0, speedMBps: 0, etaSec: -1,
+}))
+
 // Minimal stubs: a fake ServerResponse capturing the JSON body.
 function fakeRes() {
   const state = { code: 0, body: '' }
@@ -55,6 +63,27 @@ const ctx = {
   effect(cb) { cb() },
 }
 
+// Stand in for the aria2 engine: answer tellStatus for the stale GID with
+// the real transfer state, and fail for anything else (engine-down behavior).
+globalThis.fetch = async (url, init) => {
+  const body = JSON.parse(init.body)
+  if (body.params[0] === 'deadbeef') {
+    return {
+      ok: true,
+      json: async () => ({
+        result: {
+          status: 'active',
+          totalLength: '4194304',
+          completedLength: '1048576',
+          downloadSpeed: '2097152',
+          files: [{ path: join(HOME, 'big.iso') }],
+        },
+      }),
+    }
+  }
+  throw new Error('engine down')
+}
+
 const mod = await import('../lib/index.js')
 mod.apply(ctx)
 assert.equal(routes.length, 1, 'registers exactly one route')
@@ -69,14 +98,21 @@ assert.equal(route.path, mod.API_PREFIX)
   assert.equal(res.state.code, 200)
   const data = JSON.parse(res.state.body)
   assert.equal(data.ok, true)
-  assert.equal(data.active, 1, 'one active task')
+  // Two: the ledger's own downloading record, plus the aria2-backed one the
+  // RPC reports as active.
+  assert.equal(data.active, 2, 'both active tasks counted')
   // Torn record + non-json skipped; the four real records survive.
-  assert.equal(data.tasks.length, 4, 'torn/non-json records are skipped')
+  assert.equal(data.tasks.length, 5, 'torn/non-json records are skipped')
   assert.ok(
     data.tasks.some((t) => t.taskId === 'bom-jkl'),
     'a BOM-prefixed record is still parsed',
   )
-  assert.equal(data.tasks[0].name, 'model.bin', 'active task sorts first')
+  // Ordering contract: active tasks rank above terminal ones. (Which active
+  // task leads is decided by recency, so assert the ranking, not the identity.)
+  const firstTerminal = data.tasks.findIndex((t) => t.status !== 'downloading' && t.status !== 'starting')
+  assert.ok(data.tasks.slice(0, firstTerminal).every((t) => t.status === 'downloading' || t.status === 'starting'),
+    'active tasks sort before terminal ones')
+  assert.ok(firstTerminal > 0, 'at least one active task ranks first')
   const done = data.tasks.find((t) => t.taskId === 'done-def')
   assert.ok(done !== undefined, 'done record present')
   assert.equal(done.status, 'done')
@@ -84,6 +120,19 @@ assert.equal(route.path, mod.API_PREFIX)
   assert.equal(bad.error, 'ECONNRESET', 'error text preserved')
   assert.equal(bad.bytesOnDisk, 0, 'missing output file reports 0 bytes')
   console.log('PASS /tasks: sorted, torn record skipped, BOM tolerated, fields normalized')
+
+  // The aria2-backed record must show the ENGINE's numbers, not the frozen
+  // zeros its ledger file holds — "0.53 GB / 0.00 GB" was the observed bug.
+  const aria = data.tasks.find((t) => t.taskId === 'aria2-stale')
+  assert.ok(aria !== undefined, 'aria2-backed record present')
+  assert.equal(aria.source, 'aria2', 'record was refreshed from the engine')
+  assert.equal(aria.status, 'downloading', 'engine status wins over the stale ledger status')
+  assert.equal(aria.total, 4194304, 'total comes from aria2')
+  assert.equal(aria.downloaded, 1048576, 'downloaded comes from aria2')
+  assert.equal(aria.percent, 25)
+  assert.equal(aria.speedMBps, 2, 'speed comes from aria2')
+  assert.ok(aria.etaSec > 0, 'eta derived from aria2')
+  console.log('PASS aria2: a stale --no-wait record is refreshed from the RPC')
 }
 
 // --- /reveal rejects traversal ---

@@ -16,7 +16,8 @@ The original overlay sits in the bottom-right corner, covers conversation conten
 | **Speed and ETA** | MB/s and remaining time, shown while a transfer is running |
 | **Unknown-size downloads** | A pulsing bar when the server sends no `Content-Length`, instead of a fabricated percentage |
 | **History** | Finished and failed tasks stay listed; toggle "running only" |
-| **True byte counts** | Live rows read the **actual file size on disk**, so a killed process never reports a wrong number |
+| **True byte counts** | Size-less tasks fall back to the **actual file size on disk**, so a killed process never reports a wrong number |
+| **Live aria2 correction** | Records carrying a `gid` are refreshed from the aria2 RPC, so even a stale `--no-wait` record shows real progress and speed |
 | **Reveal in folder** | Locate a finished file in Explorer in one click |
 | **Forget record** | Deletes only the ledger entry — **the downloaded file is kept** |
 | **Expandable detail** | Click a row for output path, source URL, elapsed time and error text |
@@ -35,17 +36,21 @@ Build artifacts are committed, so **no local build step is needed**.
 
 ## Data source
 
-The plugin reads the task ledger written by `dsh-download-progress`:
+The plugin reads the `~/.dsh/downloads/tasks/<taskId>.json` ledger (one JSON file per download) and **fetches nothing, writes nothing**. Two download channels write that ledger, and both are supported:
 
-```
-~/.dsh/downloads/tasks/<taskId>.json
-```
+### 1. The aria2 / Motrix Next channel (recommended)
 
-One JSON file per download, carrying `name / status / total / downloaded / percent / speedMBps / etaSec / outPath` and friends. Consequently:
+Tasks enqueued through the `aria2-download` skill's `aria2-dl.js` carry a `gid` field.
 
-- **The downloader stays `dsh-download-progress`'s `download.cjs`** — this plugin fetches nothing and writes no files.
-- Both plugins can be **installed side by side**: the overlay and the sidebar page read the same data and agree.
-- If you remove `dsh-download-progress`, you also remove the producer that writes the ledger, and this plugin will simply show "暂无下载任务" (no tasks).
+**The catch**: with `--no-wait` — the normal way an agent starts a big download — `aria2-dl.js` writes its record **once**, at enqueue time (`status: starting`, all-zero counters), and never updates it, while the transfer runs on. Reading that file naively leaves the panel at 0% forever, or prints the impossible "3.62 GB / 0.00 GB".
+
+So for **any record carrying a `gid`, this plugin queries the aria2 RPC directly** (`127.0.0.1:16800`, Motrix Next's bundled engine) and reports the engine's actual state. When the engine is not running it degrades to "show what the ledger says" — never to an error.
+
+### 2. `dsh-download-progress`'s `download.cjs`
+
+That downloader rewrites its record every 500 ms, so the file is already authoritative and needs no RPC correction.
+
+Both plugins can be **installed side by side**: the overlay and the sidebar page read the same data and agree.
 
 ## Architecture
 
