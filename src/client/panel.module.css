@@ -51,14 +51,43 @@
   color: var(--dsw-alias-text-primary, #e6e6e6);
 }
 
+/*
+ * Feedback anchor. Pinned to the bottom of the panel so it stays in view no
+ * matter where the list is scrolled — the previous placement above the list
+ * was scrolled away, making a failed action look like a dead button.
+ */
+.toastArea {
+  position: sticky;
+  bottom: 0;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 12px;
+  /* A translucent backdrop keeps the text readable over list rows. */
+  background: color-mix(in srgb, var(--dsw-alias-bg-primary, #1c1c1e) 92%, transparent);
+  backdrop-filter: blur(6px);
+  border-top: 1px solid var(--dsw-alias-border-secondary, rgba(128, 128, 128, 0.2));
+}
+
 .errorBar {
-  margin: 8px 12px 0;
   padding: 6px 8px;
   border-radius: 5px;
   font-size: 11px;
+  cursor: pointer;
   color: var(--dsw-alias-status-error, #e5484d);
-  background: color-mix(in srgb, var(--dsw-alias-status-error, #e5484d) 12%, transparent);
-  flex: 0 0 auto;
+  background: color-mix(in srgb, var(--dsw-alias-status-error, #e5484d) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-status-error, #e5484d) 35%, transparent);
+}
+
+.notice {
+  padding: 6px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--dsw-alias-status-warning, #d4a72c);
+  background: color-mix(in srgb, var(--dsw-alias-status-warning, #d4a72c) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-status-warning, #d4a72c) 35%, transparent);
 }
 
 /* ---- list ---- */
@@ -73,6 +102,28 @@
   color: var(--dsw-alias-text-tertiary, #808080);
   text-align: center;
   line-height: 1.6;
+}
+/* Structured empty/diagnostic state (e.g. the ledger directory is missing). */
+.emptyTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dsw-alias-text-secondary, #9a9a9a);
+  margin-bottom: 6px;
+}
+.emptyHint {
+  font-size: 11px;
+  margin-top: 6px;
+  line-height: 1.6;
+}
+.emptyPath {
+  margin-top: 8px;
+  padding: 5px 7px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-family: var(--dsw-font-mono, ui-monospace, monospace);
+  word-break: break-all;
+  background: var(--dsw-alias-bg-secondary, rgba(128, 128, 128, 0.1));
+  color: var(--dsw-alias-text-tertiary, #808080);
 }
 
 .row {

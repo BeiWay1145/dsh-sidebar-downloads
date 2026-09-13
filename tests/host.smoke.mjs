@@ -3,7 +3,7 @@
  * task records in a temporary HOME, covering the states the panel renders
  * (active / done / error / torn record / no Content-Length).
  */
-import { mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs'
+import { mkdirSync, writeFileSync, rmSync, existsSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { strict as assert } from 'node:assert'
@@ -193,6 +193,46 @@ assert.equal(route.path, mod.API_PREFIX)
   // ...but the other records are untouched.
   assert.equal(existsSync(join(TASKS, 'active-abc.json')), true)
   console.log('PASS /forget: record removed, siblings intact')
+}
+
+// --- /tasks reports the ledger's own state ------------------------------
+{
+  const res = fakeRes()
+  await route.handler(fakeReq(mod.API_PREFIX + '/tasks'), res)
+  const data = JSON.parse(res.state.body)
+  assert.equal(data.dirExists, true, 'an existing tasks dir is reported as present')
+  assert.equal(typeof data.dir, 'string', 'the dir path is echoed for diagnostics')
+  console.log('PASS /tasks: reports dirExists when the ledger directory exists')
+}
+
+// --- a missing ledger directory is NOT reported as an ordinary empty list -
+{
+  // Move the tasks dir aside so readdirSync fails the way a cleaned ledger does.
+  const parked = TASKS + '-parked'
+  rmSync(parked, { recursive: true, force: true })
+  renameSync(TASKS, parked)
+  try {
+    const res = fakeRes()
+    await route.handler(fakeReq(mod.API_PREFIX + '/tasks'), res)
+    assert.equal(res.state.code, 200, 'still a successful response')
+    const data = JSON.parse(res.state.body)
+    assert.equal(data.dirExists, false, 'a missing directory is reported explicitly')
+    assert.deepEqual(data.tasks, [], 'and there are no tasks')
+    assert.ok(data.dir.includes('tasks'), 'the missing path is echoed')
+    console.log('PASS /tasks: a missing ledger directory is distinguishable from empty')
+  } finally {
+    renameSync(parked, TASKS)
+  }
+}
+
+// --- /reveal marks a vanished record as stale ---------------------------
+{
+  const res = fakeRes()
+  await route.handler(fakeReq(mod.API_PREFIX + '/reveal?taskId=long-gone'), res)
+  assert.equal(res.state.code, 404)
+  const body = JSON.parse(res.state.body)
+  assert.equal(body.stale, true, 'a missing record is flagged stale so the panel can drop the row')
+  console.log('PASS /reveal: a vanished record is flagged stale')
 }
 
 // --- unknown route ---

@@ -21,6 +21,9 @@ Download progress used to live in a bottom-right overlay that covers conversatio
 | **True byte counts** | Size-less tasks fall back to the **actual file size on disk**, so a killed process never reports a wrong number |
 | **Live aria2 correction** | Records carrying a `gid` are refreshed from the aria2 RPC, so even a stale `--no-wait` record shows real progress and speed |
 | **Reveal in folder** | Locate a finished file in Explorer in one click |
+| **Action feedback stays visible** | Failures and notices are anchored to a bottom overlay, so scrolling cannot hide them; click to dismiss |
+| **Stale rows self-clean** | If a record was deleted (e.g. the ledger was cleaned), the click drops the row and says why instead of failing silently |
+| **Missing ledger is explicit** | When the tasks directory is gone the panel shows "files lost" with the path, rather than posing as an ordinary empty list |
 | **Forget record** | Deletes only the ledger entry — **the downloaded file is kept** |
 | **Expandable detail** | Click a row for output path, source URL, elapsed time and error text |
 

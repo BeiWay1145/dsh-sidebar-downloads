@@ -193,18 +193,38 @@ function mergeAria2(task: TaskRecord, a: Aria2Status): TaskRecord {
   }
 }
 
+/** The ledger's own state, so the panel can tell "empty" from "gone". */
+export interface LedgerState {
+  tasks: TaskRecord[]
+  /**
+   * False when the tasks directory itself is missing.
+   *
+   * This is NOT the same as "no downloads": the directory is created by
+   * aria2-dl.js on the first enqueue, so a missing directory means the ledger
+   * has never been written (or was deleted). Reporting both as an empty list
+   * is what made a stale panel row look like a broken button — the panel had
+   * rendered rows from an earlier read, then silently received [] forever
+   * after the directory disappeared.
+   */
+  dirExists: boolean
+  /** The directory path, for the panel's diagnostic message. */
+  dir: string
+}
+
 /**
  * Read every task record. A malformed or half-written JSON file is skipped
  * rather than failing the whole listing: records are written by another
  * process (aria2-dl.js), so a torn read is always possible and must never
  * surface as an error to the panel.
  */
-async function readTasks(): Promise<TaskRecord[]> {
+async function readTasks(): Promise<LedgerState> {
   let entries: string[];
   try {
     entries = readdirSync(TASKS_DIR);
   } catch {
-    return [];
+    // The directory is absent (or unreadable) — report that distinctly rather
+    // than as an empty list.
+    return { tasks: [], dirExists: false, dir: TASKS_DIR };
   }
   const tasks: TaskRecord[] = [];
   for (const name of entries) {
@@ -263,7 +283,7 @@ async function readTasks(): Promise<TaskRecord[]> {
     if (ra !== rb) return ra - rb;
     return (b.startedAt || b.endedAt || 0) - (a.startedAt || a.endedAt || 0);
   });
-  return tasks;
+  return { tasks, dirExists: true, dir: TASKS_DIR };
 }
 
 /**
@@ -328,11 +348,15 @@ export function apply(ctx: PluginContext): void {
             : '/';
 
           if (route === '/tasks') {
-            const tasks = await readTasks();
+            const ledger = await readTasks();
             return sendJson(res, 200, {
               ok: true,
-              tasks,
-              active: tasks.filter((t) => ACTIVE.has(t.status)).length,
+              tasks: ledger.tasks,
+              active: ledger.tasks.filter((t) => ACTIVE.has(t.status)).length,
+              // Lets the panel say "the ledger is gone" instead of showing a
+              // stale list or a misleading "no downloads".
+              dirExists: ledger.dirExists,
+              dir: ledger.dir,
             });
           }
 
@@ -343,9 +367,12 @@ export function apply(ctx: PluginContext): void {
             try {
               outPath = JSON.parse(readFileSync(file, 'utf8')).outPath ?? '';
             } catch {
-              return sendJson(res, 404, { ok: false, error: '找不到该任务' });
+              // The panel rendered this row from an earlier read; its record is
+              // gone now. Say so precisely so the panel can drop the row rather
+              // than reporting a vague failure the user cannot act on.
+              return sendJson(res, 404, { ok: false, error: '该任务记录已不存在', stale: true });
             }
-            if (!outPath) return sendJson(res, 404, { ok: false, error: '任务缺少输出路径' });
+            if (!outPath) return sendJson(res, 404, { ok: false, error: '任务缺少输出路径', stale: false });
             // Explorer /select highlights the file; the trailing comma is the
             // documented form for that switch.
             execFile('explorer.exe', ['/select,' + outPath], { windowsHide: true }, () => {});

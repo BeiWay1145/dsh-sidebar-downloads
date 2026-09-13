@@ -64,20 +64,43 @@ const liveTasks = [
     elapsedSec: 60, startedAt: base, endedAt: 0 },
 ]
 
-dom.window.fetch = async (url) => {
+/**
+ * The bundle calls a bare `fetch`, which resolves to globalThis — not to
+ * dom.window.fetch. Install the mock where the bundle actually looks.
+ */
+const mockFetch = async (url) => {
   const u = String(url)
   if (u.indexOf('/tasks') >= 0) {
     calls.tasks += 1
-    const tasks = scenario === 'empty' ? [] : liveTasks
+    // In the 'stale' scenario the record is gone, so /tasks no longer lists it —
+    // that is what makes the row an orphan in the panel.
+    const tasks = scenario === 'empty' ? []
+      : scenario === 'stale' ? liveTasks.filter((t) => t.taskId !== 'c')
+      : liveTasks
     // Mirror the host half: paused is unfinished but NOT active.
     const active = tasks.filter((t) => t.status === 'downloading' || t.status === 'starting' || t.status === 'probing').length
-    return { ok: true, json: async () => ({ ok: true, tasks, active }) }
+    // 'nosdir' models a ledger directory that has been removed.
+    const dirExists = scenario !== 'nosdir'
+    return {
+      ok: true,
+      json: async () => ({ ok: true, tasks: dirExists ? tasks : [], active, dirExists, dir: 'C:/Users/x/.dsh/downloads/tasks' }),
+    }
   }
-  if (u.indexOf('/reveal') >= 0) { calls.reveal += 1; return { ok: true, json: async () => ({ ok: true }) } }
+  if (u.indexOf('/reveal') >= 0) {
+    calls.reveal += 1
+    // A scenario flag makes the record vanish, exercising the stale-row path.
+    if (scenario === 'stale') {
+      return { ok: false, status: 404, json: async () => ({ ok: false, error: '该任务记录已不存在', stale: true }) }
+    }
+    return { ok: true, json: async () => ({ ok: true }) }
+  }
   if (u.indexOf('/forget') >= 0) { calls.forget += 1; return { ok: true, json: async () => ({ ok: true }) } }
   throw new Error('unexpected fetch ' + u)
 }
-globalThis.fetch = dom.window.fetch
+// Install where the bundle actually looks (bare `fetch` -> globalThis). The
+// window copy is kept so DOM-level code sees the same implementation.
+globalThis.fetch = mockFetch
+dom.window.fetch = mockFetch
 
 // ---- load the real bundle --------------------------------------------
 let loaded
@@ -105,7 +128,22 @@ console.log('PASS bundle loaded and one style tag injected into jsdom head')
 // React 18.3+ exposes act from the react package itself.
 const { act } = react
 const container = dom.window.document.getElementById('app')
-const root = ReactDOM.createRoot(container)
+let root = ReactDOM.createRoot(container)
+
+/**
+ * Remount the panel from scratch.
+ *
+ * Re-rendering the SAME root does not remount the component, so its
+ * `useEffect` (which performs the initial fetch) never re-runs — a scenario
+ * switch alone would leave stale props-free state in place. Unmounting and
+ * creating a new root forces a fresh mount and a fresh poll.
+ */
+async function mountFresh() {
+  await act(async () => { root.unmount() })
+  root = ReactDOM.createRoot(container)
+  await act(async () => { root.render(react.createElement(tab.component, { visible: true, ctx: {} })) })
+  await act(async () => { await new Promise((r) => setTimeout(r, 80)) })
+}
 await act(async () => {
   root.render(react.createElement(tab.component, { visible: true, ctx: {} }))
 })
@@ -207,6 +245,92 @@ await act(async () => { await new Promise((r) => setTimeout(r, 50)) })
 // A fresh mount refetches; with no tasks the empty copy shows.
 assert.ok(container.textContent.length > 0, 'empty ledger renders a message')
 console.log('PASS empty: no-task ledger renders its empty state')
+
+// ---- a failed reveal must be VISIBLE, not silently swallowed ------------
+// Regression: the feedback used to render above the list and scroll away,
+// which made a failed action read as "the button did nothing".
+{
+  scenario = 'live'
+  // A fresh mount resets the running-only filter left by the previous block,
+  // so settled rows (and their reveal buttons) render again.
+  await mountFresh()
+
+  const clickReveal = async () => {
+    const b = [...container.querySelectorAll('button')].find((x) => x.textContent === '在文件夹中显示')
+    assert.ok(b !== undefined, 'reveal button present')
+    await act(async () => { b.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })) })
+    await act(async () => { await new Promise((r) => setTimeout(r, 60)) })
+  }
+
+  // Force a transport error (not a stale record) and check it surfaces.
+  // The bundle calls a bare `fetch`, which resolves to globalThis — patching
+  // dom.window.fetch would be invisible to it.
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async (url, init) => {
+    const u = String(url)
+    if (u.indexOf('/reveal') >= 0) throw new Error('network down')
+    return originalFetch(url, init)
+  }
+  await clickReveal()
+  const alert = container.querySelector('[role="alert"]')
+  assert.ok(alert !== null, 'a failed reveal renders an alert element')
+  assert.ok(alert.textContent.includes('network down'), 'the alert carries the reason')
+  // The toast area must be a sticky anchor, so it cannot be scrolled away.
+  assert.ok(alert.parentElement.className.length > 0, 'alert sits inside the sticky toast area')
+  console.log('PASS feedback: a failed reveal surfaces a visible alert')
+  globalThis.fetch = originalFetch
+}
+
+// ---- a stale record drops its row and explains why ----------------------
+{
+  // Reproduce the real sequence: the row renders while its record still
+  // exists, and the record disappears afterwards. Polling pauses (the tab is
+  // hidden) so the cached row survives — that is the orphan the user clicks.
+  scenario = 'live'
+  await mountFresh()
+  // archive.zip is settled, so it is the row that actually offers "reveal".
+  const nameSpans = () => [...container.querySelectorAll('span')].filter((s) => s.textContent === 'archive.zip')
+  assert.equal(nameSpans().length, 1, 'row present while the record still exists')
+
+  scenario = 'stale'
+  // Hide the tab so the poll stops and cannot refresh the row away before the
+  // click — the orphan must be clicked, which is what the user did.
+  await act(async () => { root.render(react.createElement(tab.component, { visible: false, ctx: {} })) })
+  await act(async () => { await new Promise((r) => setTimeout(r, 40)) })
+  assert.equal(nameSpans().length, 1, 'the orphaned row is still shown')
+
+  // The tab is hidden above, so the poll cannot race the click. Target the
+  // orphaned row's OWN reveal button via the row's task id — clicking a
+  // different row's button would not exercise the stale path.
+  const orphanRow = container.querySelector('[data-task-id="c"]')
+  assert.ok(orphanRow !== null, 'found the orphan row by task id')
+  const revealBtn = [...orphanRow.querySelectorAll('button')].find((x) => x.textContent === '在文件夹中显示')
+  assert.ok(revealBtn !== undefined, 'orphan row offers reveal')
+  await act(async () => { revealBtn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })) })
+  await act(async () => { await new Promise((r) => setTimeout(r, 60)) })
+
+  assert.equal(nameSpans().length, 0, 'the vanished row is removed from the list')
+  const status = container.querySelector('[role="status"]')
+  assert.ok(status !== null, 'a notice explains the removal')
+  assert.ok(status.textContent.includes('不存在'), 'the notice says the record is gone')
+  console.log('PASS stale: a vanished record drops its row with an explanation')
+  scenario = 'live'
+}
+
+// ---- a missing ledger directory says so, instead of "no downloads" ------
+{
+  scenario = 'nosdir'
+  await mountFresh()
+
+  const text = container.textContent
+  assert.ok(text.includes('文件丢失'), 'the header shows a lost-file pill')
+  assert.ok(text.includes('下载记录目录不存在'), 'the body explains the missing directory')
+  assert.ok(text.includes('downloads/tasks'), 'the missing path is shown for diagnosis')
+  // It must NOT claim there are simply no downloads.
+  assert.ok(!text.includes('暂无下载任务'), 'does not masquerade as an empty-but-healthy ledger')
+  console.log('PASS missing-ledger: reported as lost files with the path, not as empty')
+  scenario = 'live'
+}
 
 await act(async () => { root.unmount() })
 console.log('')

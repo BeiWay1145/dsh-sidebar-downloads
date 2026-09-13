@@ -34,11 +34,37 @@ export interface TasksResponse {
   ok: boolean
   tasks: DownloadTask[]
   active: number
+  /** False when the ledger directory itself is missing (never written / deleted). */
+  dirExists: boolean
+  /** The ledger directory path, for the panel's message. */
+  dir: string
+}
+
+/** Thrown when a record referenced by a rendered row no longer exists. */
+export class StaleRecordError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'StaleRecordError'
+  }
 }
 
 async function getJson<T>(path: string): Promise<T> {
   const res = await fetch(API_PREFIX + path)
-  if (!res.ok) throw new Error('HTTP ' + res.status)
+  if (!res.ok) {
+    // A 404 carrying `stale: true` means the row is obsolete, not that the
+    // request failed — the panel acts on that distinction.
+    let stale = false
+    let message = 'HTTP ' + res.status
+    try {
+      const body = (await res.json()) as { error?: string; stale?: boolean }
+      if (typeof body.error === 'string' && body.error !== '') message = body.error
+      stale = body.stale === true
+    } catch {
+      /* body was not JSON; keep the status message */
+    }
+    if (stale) throw new StaleRecordError(message)
+    throw new Error(message)
+  }
   const data = (await res.json()) as T & { error?: string }
   if (data && typeof data === 'object' && 'ok' in data && data.ok === false) {
     throw new Error(data.error ?? '请求失败')
