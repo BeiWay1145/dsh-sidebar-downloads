@@ -77,7 +77,7 @@ scripts/build.mjs         构建：esbuild + lightningcss
 npm install
 npm run build      # 产出 lib/index.js 与 lib/client.js
 npm run typecheck
-npm test           # host 半 + client 半冒烟测试
+npm test           # host 半 + client 半冒烟测试 + panel DOM 集成测试
 ```
 
 `lib/` 下的产物是提交进仓库的——这是本生态的约定，让用户从 git 安装时无需构建步骤。

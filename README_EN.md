@@ -77,7 +77,7 @@ The **client half** only registers (`ctx.betterSidebar.registerTab`) and owns no
 npm install
 npm run build      # emits lib/index.js and lib/client.js
 npm run typecheck
-npm test           # host-half and client-half smoke tests
+npm test           # host/client smoke tests + panel DOM integration test
 ```
 
 Artifacts under `lib/` are committed — that is the convention in this ecosystem, so installing from git needs no build step.

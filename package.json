@@ -63,7 +63,9 @@
     "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit",
     "watch": "node scripts/build.mjs --watch",
-    "test": "node tests/host.smoke.mjs && node tests/client.smoke.mjs",
+    "test": "node tests/host.smoke.mjs && node tests/client.smoke.mjs && node tests/panel.dom.mjs",
+    "test:unit": "node tests/host.smoke.mjs && node tests/client.smoke.mjs",
+    "test:dom": "node tests/panel.dom.mjs",
     "prepublishOnly": "npm run build && npm test"
   },
   "peerDependencies": {
@@ -81,6 +83,7 @@
     "@types/react": "~18.3.1",
     "@types/react-dom": "~18.3.1",
     "esbuild": "^0.25.0",
+    "jsdom": "^30.0.1",
     "lightningcss": "^1.32.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
