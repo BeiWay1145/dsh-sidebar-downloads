@@ -112,6 +112,8 @@
   color: var(--dsw-alias-text-secondary, #9a9a9a);
 }
 .status.active { color: var(--dsw-alias-brand-primary, #4d6bfe); }
+/* Paused: unfinished but not running — a muted amber, not the active blue. */
+.status.paused { color: var(--dsw-alias-status-warning, #d4a72c); }
 .status.done { color: var(--dsw-alias-status-success, #46a758); }
 .status.error,
 .status.cancelled { color: var(--dsw-alias-status-error, #e5484d); }
@@ -131,6 +133,7 @@
   transition: width 300ms ease;
 }
 .fill.done { background: var(--dsw-alias-status-success, #46a758); }
+.fill.paused { background: var(--dsw-alias-status-warning, #d4a72c); }
 .fill.error,
 .fill.cancelled { background: var(--dsw-alias-status-error, #e5484d); }
 /* No Content-Length: animate instead of showing a fake percentage. */

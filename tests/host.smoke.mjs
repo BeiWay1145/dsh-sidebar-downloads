@@ -41,6 +41,13 @@ writeFileSync(join(TASKS, 'aria2-stale.json'), JSON.stringify({
   percent: 0, downloaded: 0, total: 0, speedMBps: 0, etaSec: -1,
 }))
 
+// A user-paused aria2 transfer: unfinished, but NOT running.
+writeFileSync(join(TASKS, 'aria2-paused.json'), JSON.stringify({
+  name: 'paused.bin', url: 'https://example.com/paused.bin', gid: 'pausedgid',
+  outPath: join(HOME, 'paused.bin'), status: 'starting', startedAt: Date.now(),
+  percent: 0, downloaded: 0, total: 0, speedMBps: 0, etaSec: -1,
+}))
+
 // Minimal stubs: a fake ServerResponse capturing the JSON body.
 function fakeRes() {
   const state = { code: 0, body: '' }
@@ -67,6 +74,20 @@ const ctx = {
 // the real transfer state, and fail for anything else (engine-down behavior).
 globalThis.fetch = async (url, init) => {
   const body = JSON.parse(init.body)
+  if (body.params[0] === 'pausedgid') {
+    return {
+      ok: true,
+      json: async () => ({
+        result: {
+          status: 'paused',
+          totalLength: '4194304',
+          completedLength: '2097152',
+          downloadSpeed: '0',
+          files: [{ path: join(HOME, 'paused.bin') }],
+        },
+      }),
+    }
+  }
   if (body.params[0] === 'deadbeef') {
     return {
       ok: true,
@@ -102,7 +123,7 @@ assert.equal(route.path, mod.API_PREFIX)
   // RPC reports as active.
   assert.equal(data.active, 2, 'both active tasks counted')
   // Torn record + non-json skipped; the four real records survive.
-  assert.equal(data.tasks.length, 5, 'torn/non-json records are skipped')
+  assert.equal(data.tasks.length, 6, 'torn/non-json records are skipped')
   assert.ok(
     data.tasks.some((t) => t.taskId === 'bom-jkl'),
     'a BOM-prefixed record is still parsed',
@@ -133,6 +154,17 @@ assert.equal(route.path, mod.API_PREFIX)
   assert.equal(aria.speedMBps, 2, 'speed comes from aria2')
   assert.ok(aria.etaSec > 0, 'eta derived from aria2')
   console.log('PASS aria2: a stale --no-wait record is refreshed from the RPC')
+
+  // A paused transfer keeps its byte counts but must not be advertised as
+  // running — it would otherwise animate a stalled bar and overcount the
+  // header's "N running".
+  const paused = data.tasks.find((t) => t.taskId === 'aria2-paused')
+  assert.ok(paused !== undefined, 'paused record present')
+  assert.equal(paused.status, 'paused', 'paused stays its own state')
+  assert.equal(paused.percent, 50, 'paused keeps its progress')
+  assert.equal(paused.downloaded, 2097152)
+  assert.equal(data.active, 2, 'a paused task is not counted as active')
+  console.log('PASS aria2: a paused transfer is reported as paused, not running')
 }
 
 // --- /reveal rejects traversal ---

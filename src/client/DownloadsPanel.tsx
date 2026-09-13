@@ -46,6 +46,7 @@ function statusLabel(t: DownloadTask): string {
     case 'done': return '已完成'
     case 'error': return '失败'
     case 'cancelled': return '已取消'
+    case 'paused': return '已暂停 · ' + t.percent.toFixed(1) + '%'
     case 'probing': return '探测中'
     case 'starting': return '准备中'
     default: return t.percent > 0 ? t.percent.toFixed(1) + '%' : '下载中'
@@ -58,12 +59,29 @@ function statusClass(t: DownloadTask): string {
     case 'done': return css.done
     case 'error': return css.error
     case 'cancelled': return css.cancelled
+    case 'paused': return css.paused
     default: return css.active
   }
 }
 
+/**
+ * Header summary. Running work wins; when nothing is running but something is
+ * paused, say so rather than claiming the panel is idle — a paused 4 GB
+ * transfer is not "空闲".
+ */
+function headerStatus(runningCount: number, tasks: DownloadTask[]): string {
+  if (runningCount > 0) return runningCount + ' 个进行中'
+  const paused = tasks.filter((t) => t.status === 'paused').length
+  if (paused > 0) return paused + ' 个已暂停'
+  return '空闲'
+}
+
+/** Work is actually happening right now (a paused task is not running). */
 const isActive = (t: DownloadTask): boolean =>
   t.status === 'downloading' || t.status === 'starting' || t.status === 'probing'
+
+/** Unfinished: kept by the "running only" filter, unlike terminal states. */
+const isUnsettled = (t: DownloadTask): boolean => isActive(t) || t.status === 'paused'
 
 export interface PanelProps {
   visible: boolean
@@ -159,17 +177,14 @@ export function DownloadsPanel({ visible }: PanelProps) {
   }
 
   const running = tasks.filter(isActive)
-  const finished = tasks.filter((t) => !isActive(t))
-  const shown = showFinished ? tasks : running
+  const shown = showFinished ? tasks : tasks.filter(isUnsettled)
 
   return (
     <div className={css.root}>
       <div className={css.header}>
         <div className={css.headline}>
           <span className={css.title}>下载</span>
-          <span className={running.length > 0 ? css.pillActive : css.pill}>
-            {running.length > 0 ? running.length + ' 个进行中' : '空闲'}
-          </span>
+          <span className={running.length > 0 ? css.pillActive : css.pill}>{headerStatus(running.length, tasks)}</span>
         </div>
         <div className={css.headerActions}>
           <button
@@ -229,7 +244,7 @@ export function DownloadsPanel({ visible }: PanelProps) {
                   <span className={css.metaRight}>
                     {active && fmtSpeed(t.speedMBps)}
                     {active && t.etaSec > 0 && ' · 剩余 ' + fmtDuration(t.etaSec)}
-                    {!active && t.endedAt > 0 && new Date(t.endedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                    {!isUnsettled(t) && t.endedAt > 0 && new Date(t.endedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </div>
 
@@ -263,7 +278,11 @@ export function DownloadsPanel({ visible }: PanelProps) {
                 )}
 
                 <div className={css.actions}>
-                  {!active && (
+                  {/* Only a settled transfer has a complete file to highlight —
+                      offering this on a paused or in-flight task would send the
+                      user to a partial download. */}
+                  {t.status !== 'downloading' && t.status !== 'starting' &&
+                   t.status !== 'probing' && t.status !== 'paused' && (
                     <button type="button" className={css.actBtn} disabled={busy === t.taskId}
                             onClick={() => void onReveal(t.taskId)}>
                       在文件夹中显示

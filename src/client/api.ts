@@ -11,6 +11,11 @@ export interface DownloadTask {
   url: string
   finalUrl: string
   outPath: string
+  /**
+   * One of: downloading | starting | probing | paused | done | error |
+   * cancelled | unknown. `paused` is unfinished but not running, so it is
+   * excluded from the running count while staying in the running-only filter.
+   */
   status: string
   error: string
   total: number

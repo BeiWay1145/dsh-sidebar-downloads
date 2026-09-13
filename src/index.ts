@@ -130,13 +130,21 @@ async function aria2Status(gid: string): Promise<Aria2Status | undefined> {
   }
 }
 
-/** Map an aria2 transfer status onto this plugin's vocabulary. */
+/**
+ * Map an aria2 transfer status onto this plugin's vocabulary.
+ *
+ * `paused` stays its own state rather than collapsing into `downloading`:
+ * a paused transfer has no speed and will never finish on its own, so
+ * rendering it as an active download would both animate a stalled bar and
+ * overcount the header's "N running".
+ */
 function aria2TaskStatus(s: string): string {
   switch (s) {
     case 'active':
     case 'waiting':
-    case 'paused':
       return 'downloading'
+    case 'paused':
+      return 'paused'
     case 'complete':
       return 'done'
     case 'error':
@@ -172,13 +180,13 @@ function mergeAria2(task: TaskRecord, a: Aria2Status): TaskRecord {
     downloaded: done,
     percent: pct,
     speedMBps: Math.round((speed / 1048576) * 100) / 100,
-    etaSec: speed > 0 && total > 0 ? Math.round((total - done) / speed) : status === 'downloading' ? -1 : 0,
+    etaSec: speed > 0 && total > 0 ? Math.round((total - done) / speed) : -1,
     error: String(a.errorMessage ?? '') || task.error,
     outPath: ariaPath !== '' ? ariaPath : task.outPath,
     // Byte count for a live transfer is the engine's, not a stat() of a file
     // that may be a preallocated sparse placeholder.
     bytesOnDisk: status === 'done' ? (task.outPath ? fileSize(ariaPath || task.outPath) : done) : done,
-    endedAt: status === 'downloading' ? 0 : task.endedAt || Date.now(),
+    endedAt: status === 'downloading' || status === 'paused' ? 0 : task.endedAt || Date.now(),
     source: 'aria2',
   }
 }

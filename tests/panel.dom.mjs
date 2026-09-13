@@ -56,14 +56,22 @@ const liveTasks = [
   { taskId: 'd', name: 'broken.tar', status: 'error', percent: 0, total: 0,
     downloaded: 0, bytesOnDisk: 0, speedMBps: 0, etaSec: 0, outPath: 'C:/dl/b.tar',
     url: '', finalUrl: '', error: 'ECONNRESET', elapsedSec: 3, startedAt: base, endedAt: base },
+  // A user-paused transfer: unfinished, so it keeps progress and offers no
+  // "reveal" (there is no finished file yet), and it is not "active".
+  { taskId: 'p', name: 'paused.iso', status: 'paused', percent: 17.7, total: 4194304,
+    downloaded: 742000, bytesOnDisk: 742000, speedMBps: 0, etaSec: -1,
+    outPath: 'C:/dl/p.iso', url: 'https://x/p', finalUrl: '', error: '',
+    elapsedSec: 60, startedAt: base, endedAt: 0 },
 ]
 
 dom.window.fetch = async (url) => {
   const u = String(url)
   if (u.indexOf('/tasks') >= 0) {
     calls.tasks += 1
-    const tasks = scenario === 'empty' ? [] : scenario === 'running-only' ? liveTasks.slice(0, 2) : liveTasks
-    return { ok: true, json: async () => ({ ok: true, tasks, active: tasks.filter((t) => t.status === 'downloading').length }) }
+    const tasks = scenario === 'empty' ? [] : liveTasks
+    // Mirror the host half: paused is unfinished but NOT active.
+    const active = tasks.filter((t) => t.status === 'downloading' || t.status === 'starting' || t.status === 'probing').length
+    return { ok: true, json: async () => ({ ok: true, tasks, active }) }
   }
   if (u.indexOf('/reveal') >= 0) { calls.reveal += 1; return { ok: true, json: async () => ({ ok: true }) } }
   if (u.indexOf('/forget') >= 0) { calls.forget += 1; return { ok: true, json: async () => ({ ok: true }) } }
@@ -113,13 +121,42 @@ assert.ok(text().indexOf('archive.zip') >= 0, 'renders a finished task')
 assert.ok(text().indexOf('已完成') >= 0, 'renders the done status')
 assert.ok(text().indexOf('broken.tar') >= 0, 'renders a failed task')
 assert.ok(text().indexOf('失败') >= 0, 'renders the error status')
-assert.ok(text().indexOf('2 个进行中') >= 0, 'header counts the running tasks')
+assert.ok(text().indexOf('2 个进行中') >= 0, 'header counts only the running tasks')
 console.log('PASS mount: live + history rows, percentage, speed and statuses all render')
 
 // Unknown-size task must not print a fake percentage; its bar is indeterminate.
 const bars = container.querySelectorAll('[data-indeterminate="true"]')
 assert.equal(bars.length, 1, 'exactly one indeterminate bar for the unknown-size task')
 console.log('PASS unknown-size: one indeterminate bar, no fabricated percentage')
+
+// A paused transfer must read as paused, keep its progress, and NOT add an
+// animated indeterminate bar (it is not running).
+assert.ok(text().indexOf('paused.iso') >= 0, 'paused row renders')
+assert.ok(text().indexOf('已暂停 · 17.7%') >= 0, 'paused row shows its state and progress')
+assert.ok(text().indexOf('空闲') < 0, 'panel does not claim to be idle while a transfer is paused')
+assert.equal(
+  container.querySelectorAll('[data-indeterminate="true"]').length,
+  1,
+  'a paused row does not animate an indeterminate bar',
+)
+console.log('PASS paused: distinct label, progress kept, no false activity')
+
+// A paused transfer has no complete file on disk, so it must not offer
+// "reveal in folder" (that would open a partial download) and must not show
+// a completion timestamp. Both were observed bugs.
+{
+  // Find the paused row's own subtree by walking up from its name span to the
+  // container that owns the action buttons.
+  const nameSpans = [...container.querySelectorAll('span')].filter((s) => s.textContent === 'paused.iso')
+  assert.equal(nameSpans.length, 1, 'paused row name found')
+  let scope = nameSpans[0]
+  while (scope !== null && (scope.querySelectorAll('button').length === 0)) scope = scope.parentElement
+  assert.ok(scope !== null, 'found the paused row container')
+  const labels = [...scope.querySelectorAll('button')].map((b) => b.textContent)
+  assert.ok(labels.indexOf('在文件夹中显示') < 0, 'paused row offers no reveal')
+  assert.ok(labels.indexOf('移除记录') >= 0, 'paused row still offers forget')
+}
+console.log('PASS paused: no reveal offered for an unfinished transfer')
 
 // ---- expand a row to reveal detail -----------------------------------
 // The row header is the clickable div carrying the chevron, name and status.
