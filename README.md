@@ -1,12 +1,14 @@
 # dsh-sidebar-downloads
 
-把下载进度**从悬浮窗搬进侧边栏**的 [dsh-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar) 附属插件。
+把 **aria2 下载进度显示在侧边栏**的 [dsh-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar) 附属插件。
 
-> 本插件是 [dsh-download-progress](https://github.com/omdsh-dev/DSH-better-sidebar) 悬浮面板的替代显示层：**复用它的任务账本**（`~/.dsh/downloads/tasks/*.json`），不重复实现下载器，只是把同样的数据渲染成一个侧边栏页面。
+> 本插件是 **aria2 下载通道的侧边栏视图**：读取 `aria2-dl.js` 写的任务账本（`~/.dsh/downloads/tasks/*.json`），并对**带 `gid` 的记录查询 aria2 RPC 补正**，不重复实现下载器，只把真实状态渲染成一个侧边栏页面。
+>
+> 配套 [dsh-download-guard](https://github.com/BeiWay1145/dsh-download-guard) 强制所有下载走 aria2 —— 两者合起来是完整闭环：**守卫负责「只能走这条路」，本插件负责「能看见这条路」**。
 
 ## 为什么
 
-原 `dsh-download-progress` 用一个右下角悬浮窗展示进度。悬浮窗会**盖住会话内容**、要手动拖拽躲避、且和 DSH 自身的侧边栏体系割裂。本插件注册一个正式的 better-sidebar 页面——和「资源管理器 / 终端 / Git」并列，开合、拆并、皮肤跟随全部由底座统一管理。
+下载进度曾经由右下角悬浮窗展示：会**盖住会话内容**、要手动拖拽躲避、且和 DSH 自身的侧边栏体系割裂。本插件注册一个正式的 better-sidebar 页面——和「资源管理器 / 终端 / Git」并列，开合、拆并、皮肤跟随全部由底座统一管理。
 
 ## 功能
 
@@ -37,21 +39,17 @@ cd ~/.dsh && dsh plugin --profile <your-profile> add dsh-better-sidebar && dsh p
 
 ## 数据来源
 
-本插件读取 `~/.dsh/downloads/tasks/<taskId>.json` 任务账本（每个下载任务一个 JSON 文件），**不抓取网络、不写文件**。有两条下载通道写这个账本，本插件都支持：
+本插件读取 `~/.dsh/downloads/tasks/<taskId>.json` 任务账本（每个下载任务一个 JSON 文件），**不抓取网络、不写文件**。
 
-### 1. aria2 / Motrix Next 通道（推荐）
+### 唯一的生产者：`aria2-dl.js`
 
-通过 `aria2-download` 技能的 `aria2-dl.js` 入队时，记录里带一个 `gid` 字段。
+账本现在只有 **一个** 写入方——`aria2-download` 技能的 `aria2-dl.js`。每次入队都会写一条带 `gid` 字段的记录。配合 [dsh-download-guard](https://github.com/BeiWay1145/dsh-download-guard) 拦掉一切绕过 aria2 的命令后，这个账本即**全部**的下载活动。
 
-**关键点**：以 `--no-wait` 方式入队时，`aria2-dl.js` 只在入队瞬间写**一次**记录（`status: starting`、计数器全 0）就返回了，之后不再更新——而下载其实还在跑。直接读该文件会让面板永远停在 0%，甚至显示「已下载 3.62 GB / 总量 0.00 GB」这种自相矛盾的结果。
+### 为什么还要查 aria2 RPC
+
+`aria2-dl.js` 以 `--no-wait` 方式入队时，只在**入队瞬间写一次**记录（`status: starting`、计数器全 0）就返回，之后不再更新——而下载其实还在跑。直接读该文件会让面板永远停在 0%，甚至显示「已下载 3.62 GB / 总量 0.00 GB」这种自相矛盾的结果。
 
 因此本插件对**带 `gid` 的记录会直接查询 aria2 RPC**（`127.0.0.1:16800`，Motrix Next 内置引擎），以引擎的实际状态为准。引擎未运行时自动降级为「照账本显示」，不会报错。
-
-### 2. `dsh-download-progress` 的 `download.cjs`
-
-该下载器每 500 ms 重写自己的记录，文件本身就是权威数据，无需 RPC 补正。
-
-两个插件可以**同时安装**：悬浮窗与侧边栏页面读同一份数据，显示内容一致。
 
 ## 架构
 
@@ -64,7 +62,7 @@ src/client/api.ts         typed fetch 封装
 scripts/build.mjs         构建：esbuild + lightningcss
 ```
 
-**host 半** 只声明 `inject: ['webServer']`，用 node 内置模块读写文件，不依赖 `ctx.fs` / `ctx.subprocess`。
+**host 半** 只声明 `inject: ['webServer']`，用 node 内置模块读写文件，不依赖 `ctx.fs` / `ctx.subprocess`；查询 aria2 RPC 用的是 node 内置 `fetch`，无额外依赖。
 **client 半** 只做注册（`ctx.betterSidebar.registerTab`），不自行布局，卸载后零残留。
 
 ### 路由

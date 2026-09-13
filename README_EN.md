@@ -1,12 +1,14 @@
 # dsh-sidebar-downloads
 
-A [dsh-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar) satellite plugin that moves download progress **out of a floating overlay and into the sidebar**.
+A [dsh-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar) satellite plugin that shows **aria2 download progress in the sidebar**.
 
-> This plugin is an alternative display layer for the `dsh-download-progress` overlay: it **reuses that plugin's task ledger** (`~/.dsh/downloads/tasks/*.json`) rather than implementing a second downloader.
+> This plugin is the **sidebar view of the aria2 download channel**: it reads the ledger `aria2-dl.js` writes (`~/.dsh/downloads/tasks/*.json`) and refreshes records carrying a `gid` from the aria2 RPC. It implements no downloader of its own — it just renders the real state as a sidebar page.
+>
+> It pairs with [dsh-download-guard](https://github.com/BeiWay1145/dsh-download-guard), which forces every download through aria2. Together they close the loop: **the guard owns "this is the only way", this plugin owns "you can see it".**
 
 ## Why
 
-The original overlay sits in the bottom-right corner, covers conversation content, has to be dragged out of the way, and is disconnected from DSH's own sidebar system. This plugin registers a proper better-sidebar page — a peer of Explorer / Terminal / Git — so opening, moving, splitting and theming are all handled by the host.
+Download progress used to live in a bottom-right overlay that covers conversation content, has to be dragged out of the way, and sits apart from DSH's own sidebar system. This plugin registers a proper better-sidebar page — a peer of Explorer / Terminal / Git — so opening, moving, splitting and theming are all handled by the host.
 
 ## Features
 
@@ -36,21 +38,17 @@ Build artifacts are committed, so **no local build step is needed**.
 
 ## Data source
 
-The plugin reads the `~/.dsh/downloads/tasks/<taskId>.json` ledger (one JSON file per download) and **fetches nothing, writes nothing**. Two download channels write that ledger, and both are supported:
+The plugin reads the `~/.dsh/downloads/tasks/<taskId>.json` ledger (one JSON file per download) and **fetches nothing, writes nothing**.
 
-### 1. The aria2 / Motrix Next channel (recommended)
+### One producer: `aria2-dl.js`
 
-Tasks enqueued through the `aria2-download` skill's `aria2-dl.js` carry a `gid` field.
+The ledger now has exactly **one** writer — the `aria2-download` skill's `aria2-dl.js`, which records a `gid` on every enqueue. With [dsh-download-guard](https://github.com/BeiWay1145/dsh-download-guard) denying anything that would bypass aria2, that ledger is the **complete** record of download activity.
 
-**The catch**: with `--no-wait` — the normal way an agent starts a big download — `aria2-dl.js` writes its record **once**, at enqueue time (`status: starting`, all-zero counters), and never updates it, while the transfer runs on. Reading that file naively leaves the panel at 0% forever, or prints the impossible "3.62 GB / 0.00 GB".
+### Why the aria2 RPC is still consulted
+
+With `--no-wait` — the normal way an agent starts a big download — `aria2-dl.js` writes its record **once**, at enqueue time (`status: starting`, all-zero counters), and never updates it while the transfer runs on. Reading that file naively leaves the panel at 0% forever, or prints the impossible "3.62 GB / 0.00 GB".
 
 So for **any record carrying a `gid`, this plugin queries the aria2 RPC directly** (`127.0.0.1:16800`, Motrix Next's bundled engine) and reports the engine's actual state. When the engine is not running it degrades to "show what the ledger says" — never to an error.
-
-### 2. `dsh-download-progress`'s `download.cjs`
-
-That downloader rewrites its record every 500 ms, so the file is already authoritative and needs no RPC correction.
-
-Both plugins can be **installed side by side**: the overlay and the sidebar page read the same data and agree.
 
 ## Architecture
 

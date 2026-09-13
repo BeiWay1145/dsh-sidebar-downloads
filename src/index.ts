@@ -5,22 +5,24 @@
  * per task) and republishes it over HTTP for the client half, plus the two
  * file actions the panel offers (reveal in Explorer / forget a record).
  *
- * Two producers write that ledger, and they do NOT keep it equally fresh:
+ * ONE producer writes that ledger: the aria2 channel's `aria2-dl.js` (the
+ * forwarder every download now goes through — `dsh-download-guard` denies any
+ * shell command that would bypass it). The former hand-rolled
+ * `download.cjs` producer is gone, so the ledger is no longer a mixed pool of
+ * differently-fresh records.
  *
- * - `dsh-download-progress`'s `download.cjs` rewrites its record every
- *   500 ms, so the file itself is authoritative for those tasks.
- * - The aria2 channel's `aria2-dl.js` writes its record only ONCE at enqueue
- *   time, and only refreshes it while blocking (`--wait`). A task enqueued
- *   with `--no-wait` — the normal way an agent starts a big download — leaves
- *   a frozen `starting` record with all-zero counters while the transfer
- *   runs to completion. Trusting the file there renders "0%" forever, or
- *   worse, pairs a stale `total: 0` with live bytes on disk and prints an
- *   impossible "3.62 GB / 0.00 GB".
+ * That single producer still needs correcting, though: `aria2-dl.js` writes
+ * its record only ONCE at enqueue time, and refreshes it only while blocking
+ * (`--wait`). A task enqueued with `--no-wait` — the normal way an agent
+ * starts a big download — leaves a frozen `starting` record with all-zero
+ * counters while the transfer runs to completion. Trusting the file there
+ * renders "0%" forever, or worse, pairs a stale `total: 0` with live bytes
+ * on disk and prints an impossible "3.62 GB / 0.00 GB".
  *
  * So a record carrying a `gid` is refreshed from the aria2 RPC, which is the
- * real owner of that transfer's state. Everything else is served from the
- * file as before. If aria2 is not running, the record is served unchanged —
- * enrichment degrades to "show what the ledger says", never to an error.
+ * real owner of that transfer's state. If aria2 is not running, the record is
+ * served unchanged — enrichment degrades to "show what the ledger says",
+ * never to an error.
  *
  * Contract notes:
  * - `inject: ['webServer']` is mandatory: cordis throws
@@ -193,9 +195,9 @@ function mergeAria2(task: TaskRecord, a: Aria2Status): TaskRecord {
 
 /**
  * Read every task record. A malformed or half-written JSON file is skipped
- * rather than failing the whole listing — download.cjs rewrites these files
- * on a 500 ms tick, so a torn read is expected and must never surface as an
- * error to the panel.
+ * rather than failing the whole listing: records are written by another
+ * process (aria2-dl.js), so a torn read is always possible and must never
+ * surface as an error to the panel.
  */
 async function readTasks(): Promise<TaskRecord[]> {
   let entries: string[];

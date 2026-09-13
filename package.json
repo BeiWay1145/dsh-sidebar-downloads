@@ -1,7 +1,7 @@
 {
   "name": "dsh-sidebar-downloads",
   "version": "0.1.0",
-  "description": "DeepSeek Harness web plugin: a better-sidebar tab showing live download progress (percent / speed / ETA / history), replacing the floating overlay with a sidebar page. 把下载进度从悬浮窗搬进侧边栏的 dsh-better-sidebar 附属插件。",
+  "description": "DeepSeek Harness web plugin: a better-sidebar tab showing live aria2 download progress (percent / speed / ETA / history). Pairs with dsh-download-guard. 把 aria2 下载进度显示在侧边栏的 dsh-better-sidebar 附属插件。",
   "type": "module",
   "license": "MIT",
   "repository": {
