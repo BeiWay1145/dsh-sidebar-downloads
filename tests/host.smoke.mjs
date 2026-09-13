@@ -26,6 +26,12 @@ writeFileSync(join(TASKS, 'done-def.json'), JSON.stringify({
 writeFileSync(join(TASKS, 'bad-ghi.json'), JSON.stringify({ name: 'failed.iso', status: 'error', error: 'ECONNRESET' }))
 writeFileSync(join(TASKS, 'torn.json'), '{ "name": "half-writ')
 writeFileSync(join(TASKS, 'ignore.txt'), 'not json')
+// A UTF-8 BOM ahead of the JSON: PowerShell's `Set-Content -Encoding utf8`
+// produces this, and JSON.parse rejects it unless it is stripped.
+writeFileSync(join(TASKS, 'bom-jkl.json'), '\uFEFF' + JSON.stringify({
+  name: 'bom.bin', status: 'done', total: 10, downloaded: 10, percent: 100,
+  startedAt: Date.now(), endedAt: Date.now(),
+}))
 
 // Minimal stubs: a fake ServerResponse capturing the JSON body.
 function fakeRes() {
@@ -65,7 +71,11 @@ assert.equal(route.path, mod.API_PREFIX)
   assert.equal(data.ok, true)
   assert.equal(data.active, 1, 'one active task')
   // Torn record + non-json skipped; the four real records survive.
-  assert.equal(data.tasks.length, 3, 'torn/non-json records are skipped')
+  assert.equal(data.tasks.length, 4, 'torn/non-json records are skipped')
+  assert.ok(
+    data.tasks.some((t) => t.taskId === 'bom-jkl'),
+    'a BOM-prefixed record is still parsed',
+  )
   assert.equal(data.tasks[0].name, 'model.bin', 'active task sorts first')
   const done = data.tasks.find((t) => t.taskId === 'done-def')
   assert.ok(done !== undefined, 'done record present')
@@ -73,7 +83,7 @@ assert.equal(route.path, mod.API_PREFIX)
   const bad = data.tasks.find((t) => t.taskId === 'bad-ghi')
   assert.equal(bad.error, 'ECONNRESET', 'error text preserved')
   assert.equal(bad.bytesOnDisk, 0, 'missing output file reports 0 bytes')
-  console.log('PASS /tasks: sorted, torn record skipped, fields normalized')
+  console.log('PASS /tasks: sorted, torn record skipped, BOM tolerated, fields normalized')
 }
 
 // --- /reveal rejects traversal ---

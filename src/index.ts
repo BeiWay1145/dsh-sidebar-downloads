@@ -85,16 +85,18 @@ function readTasks(): TaskRecord[] {
     if (!name.endsWith('.json')) continue;
     const taskId = name.slice(0, -'.json'.length);
     try {
-      const obj = JSON.parse(readFileSync(join(TASKS_DIR, name), 'utf8'));
-      if (!obj || typeof obj !== 'object' || !obj.name) continue;
+      const obj = parseRecord(readFileSync(join(TASKS_DIR, name), 'utf8'));
+      if (obj === null || typeof obj !== 'object') continue;
+      const name_ = str(obj.name);
+      if (name_ === '') continue;
       tasks.push({
         taskId,
-        name: obj.name,
-        url: obj.url ?? '',
-        finalUrl: obj.finalUrl ?? '',
-        outPath: obj.outPath ?? '',
-        status: obj.status ?? 'unknown',
-        error: obj.error ?? '',
+        name: name_,
+        url: str(obj.url),
+        finalUrl: str(obj.finalUrl),
+        outPath: str(obj.outPath),
+        status: str(obj.status) || 'unknown',
+        error: str(obj.error),
         total: num(obj.total),
         downloaded: num(obj.downloaded),
         // percent is -1 when the server sent no Content-Length.
@@ -120,6 +122,24 @@ function readTasks(): TaskRecord[] {
     return (b.startedAt || b.endedAt || 0) - (a.startedAt || a.endedAt || 0);
   });
   return tasks;
+}
+
+/**
+ * Parse a task record.
+ *
+ * The ledger is written by other tooling, so tolerate a UTF-8 BOM: a record
+ * round-tripped through PowerShell's `Set-Content -Encoding utf8` carries
+ * one, and `JSON.parse` rejects it outright. Stripping it costs nothing and
+ * turns a silently-dropped task into a rendered one.
+ */
+function parseRecord(text: string): Record<string, unknown> {
+  const clean = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+  return JSON.parse(clean) as Record<string, unknown>;
+}
+
+/** Read a field as a string; anything else (including absent) becomes ''. */
+function str(v: unknown): string {
+  return typeof v === 'string' ? v : '';
 }
 
 function num(v: unknown): number {
