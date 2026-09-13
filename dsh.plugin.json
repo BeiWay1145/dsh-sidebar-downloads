@@ -1,0 +1,16 @@
+{
+  "id": "dsh-external/dsh-sidebar-downloads",
+  "version": "0.1.0",
+  "main": "./lib/index.js",
+  "description": "better-sidebar Downloads tab: live progress / speed / ETA and history for the dsh-download-progress task ledger.",
+  "engines": {
+    "dsh": ">=0.0.1"
+  },
+  "contributes": {
+    "tools": [],
+    "skills": []
+  },
+  "client": {
+    "main": "./lib/client.js"
+  }
+}

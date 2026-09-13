@@ -1,0 +1,10 @@
+# dsh-sidebar-downloads bundle patch
+#
+# Installed with:
+#   dsh plugin --profile <name> add <path-or-git-url>
+#
+# The client half injects `betterSidebar`. Without dsh-better-sidebar the
+# host routes still mount (harmless); the tab simply never appears.
+- insert:
+    - id: sidebar-downloads
+      name: 'dsh-sidebar-downloads'

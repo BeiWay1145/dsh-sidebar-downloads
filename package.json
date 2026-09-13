@@ -1,0 +1,92 @@
+{
+  "name": "dsh-sidebar-downloads",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness web plugin: a better-sidebar tab showing live download progress (percent / speed / ETA / history), replacing the floating overlay with a sidebar page. 把下载进度从悬浮窗搬进侧边栏的 dsh-better-sidebar 附属插件。",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BeiWay1145/dsh-sidebar-downloads.git"
+  },
+  "homepage": "https://github.com/BeiWay1145/dsh-sidebar-downloads",
+  "bugs": {
+    "url": "https://github.com/BeiWay1145/dsh-sidebar-downloads/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "dsh-better-sidebar",
+    "download",
+    "progress",
+    "sidebar",
+    "deepseek-harness"
+  ],
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "lib/types/**/*.d.ts",
+    "src",
+    "cordis.patch.yml",
+    "dsh.plugin.json",
+    "README.md",
+    "README_EN.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime"
+      ],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "watch": "node scripts/build.mjs --watch",
+    "test": "node tests/host.smoke.mjs && node tests/client.smoke.mjs",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "peerDependencies": {
+    "dsh-better-sidebar": "^0.19.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "peerDependenciesMeta": {
+    "dsh-better-sidebar": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "~18.3.1",
+    "@types/react-dom": "~18.3.1",
+    "esbuild": "^0.25.0",
+    "lightningcss": "^1.32.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "typescript": "^5.6.0"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true
+  }
+}
