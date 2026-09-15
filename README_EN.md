@@ -45,7 +45,7 @@ The plugin reads the `~/.dsh/downloads/tasks/<taskId>.json` ledger (one JSON fil
 
 ### One producer: `aria2-dl.js`
 
-The ledger now has exactly **one** writer — the `aria2-download` skill's `aria2-dl.js`, which records a `gid` on every enqueue. With [dsh-download-guard](https://github.com/BeiWay1145/dsh-download-guard) denying anything that would bypass aria2, that ledger is the **complete** record of download activity.
+The ledger now has exactly **one** writer — `aria2-dl.cjs`, shipped with [dsh-download-guard](https://github.com/BeiWay1145/dsh-download-guard), which records a `gid` on every enqueue. With [dsh-download-guard](https://github.com/BeiWay1145/dsh-download-guard) denying anything that would bypass aria2, that ledger is the **complete** record of download activity.
 
 ### Why the aria2 RPC is still consulted
 

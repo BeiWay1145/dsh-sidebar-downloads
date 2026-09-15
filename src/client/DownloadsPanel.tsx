@@ -235,7 +235,7 @@ export function DownloadsPanel({ visible }: PanelProps) {
           <div className={css.emptyPath} title={ledgerMissing.dir}>{ledgerMissing.dir}</div>
           <div className={css.emptyHint}>
             该目录由 aria2 下载脚本首次入队时创建。若你刚清理过下载记录，这是正常的；
-            否则请通过 aria2-dl.js 发起一次下载以重新建立。
+            否则请通过 aria2-dl.cjs（随 dsh-download-guard 分发）发起一次下载以重新建立。
           </div>
         </div>
       </div>

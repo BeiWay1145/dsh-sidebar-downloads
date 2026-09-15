@@ -46,7 +46,7 @@ cd ~/.dsh && dsh plugin --profile <your-profile> add dsh-better-sidebar && dsh p
 
 ### 唯一的生产者：`aria2-dl.js`
 
-账本现在只有 **一个** 写入方——`aria2-download` 技能的 `aria2-dl.js`。每次入队都会写一条带 `gid` 字段的记录。配合 [dsh-download-guard](https://github.com/BeiWay1145/dsh-download-guard) 拦掉一切绕过 aria2 的命令后，这个账本即**全部**的下载活动。
+账本现在只有 **一个** 写入方——`aria2-dl.cjs`（随 [dsh-download-guard](https://github.com/BeiWay1145/dsh-download-guard) 包分发）。每次入队都会写一条带 `gid` 字段的记录。配合守卫拦掉一切绕过 aria2 的命令后，这个账本即**全部**的下载活动。
 
 ### 为什么还要查 aria2 RPC
 
