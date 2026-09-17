@@ -47,6 +47,21 @@ The plugin reads the `~/.dsh/downloads/tasks/<taskId>.json` ledger (one JSON fil
 
 The ledger now has exactly **one** writer — `aria2-dl.cjs`, shipped with [dsh-download-guard](https://github.com/BeiWay1145/dsh-download-guard), which records a `gid` on every enqueue. With [dsh-download-guard](https://github.com/BeiWay1145/dsh-download-guard) denying anything that would bypass aria2, that ledger is the **complete** record of download activity.
 
+### Configuring the RPC endpoint
+
+The panel and `aria2-dl.cjs` **share one set of environment variables and defaults**, and both must point at the same engine:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `ARIA2_RPC_URL` | — | Full URL; when set it **wins over** the two below |
+| `ARIA2_RPC_HOST` | `127.0.0.1` | Engine host |
+| `ARIA2_RPC_PORT` | `16800` | Engine port |
+| `ARIA2_RPC_TIMEOUT_MS` | `1500` | Status query timeout |
+
+> The `16800` default works with Motrix Next out of the box. If your aria2 listens elsewhere (the common `6800`, for instance), set the variable — an earlier version hard-coded the port, so downloads succeeded while the panel sat at 0% **with no indication why**.
+
+When the engine is unreachable the panel shows a **persistent banner** naming the address it tried and the variable to change, instead of letting progress quietly freeze.
+
 ### Why the aria2 RPC is still consulted
 
 With `--no-wait` — the normal way an agent starts a big download — `aria2-dl.js` writes its record **once**, at enqueue time (`status: starting`, all-zero counters), and never updates it while the transfer runs on. Reading that file naively leaves the panel at 0% forever, or prints the impossible "3.62 GB / 0.00 GB".

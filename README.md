@@ -48,6 +48,21 @@ cd ~/.dsh && dsh plugin --profile <your-profile> add dsh-better-sidebar && dsh p
 
 账本现在只有 **一个** 写入方——`aria2-dl.cjs`（随 [dsh-download-guard](https://github.com/BeiWay1145/dsh-download-guard) 包分发）。每次入队都会写一条带 `gid` 字段的记录。配合守卫拦掉一切绕过 aria2 的命令后，这个账本即**全部**的下载活动。
 
+### 配置 RPC endpoint
+
+面板与 `aria2-dl.cjs` **使用同一套环境变量与默认值**，两边必须指向同一个引擎：
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `ARIA2_RPC_URL` | — | 完整 URL；设置后**优先于**下面两项 |
+| `ARIA2_RPC_HOST` | `127.0.0.1` | 引擎主机 |
+| `ARIA2_RPC_PORT` | `16800` | 引擎端口 |
+| `ARIA2_RPC_TIMEOUT_MS` | `1500` | 状态查询超时 |
+
+> 默认 `16800` 对 Motrix Next 开箱即用。若你的 aria2 用其他端口（例如常见的 `6800`），**改这个变量即可**——早期版本把端口写死，导致下载正常但面板停在 0%，且**没有任何提示**。
+
+引擎不可达时，面板会显示一条**常驻提示**（含尝试的地址与要改的变量名），而不是让进度静静停住。
+
 ### 为什么还要查 aria2 RPC
 
 `aria2-dl.js` 以 `--no-wait` 方式入队时，只在**入队瞬间写一次**记录（`status: starting`、计数器全 0）就返回，之后不再更新——而下载其实还在跑。直接读该文件会让面板永远停在 0%，甚至显示「已下载 3.62 GB / 总量 0.00 GB」这种自相矛盾的结果。

@@ -235,6 +235,68 @@ assert.equal(route.path, mod.API_PREFIX)
   console.log('PASS /reveal: a vanished record is flagged stale')
 }
 
+// --- issue #1: the RPC endpoint is configurable -------------------------
+// Both halves of the setup must point at the SAME engine: the forwarder
+// enqueues on its port and the host half polls status on it.
+{
+  const cases = [
+    [{}, 'http://127.0.0.1:16800/jsonrpc', 'unset falls back to the Motrix Next default'],
+    [{ ARIA2_RPC_PORT: '6800' }, 'http://127.0.0.1:6800/jsonrpc', 'ARIA2_RPC_PORT is honoured'],
+    [{ ARIA2_RPC_PORT: '6800', ARIA2_RPC_HOST: '10.0.0.5' }, 'http://10.0.0.5:6800/jsonrpc', 'ARIA2_RPC_HOST is honoured'],
+    [{ ARIA2_RPC_URL: 'http://127.0.0.1:9999/jsonrpc', ARIA2_RPC_PORT: '6800' }, 'http://127.0.0.1:9999/jsonrpc', 'an explicit URL wins'],
+    [{ ARIA2_RPC_PORT: 'not-a-port' }, 'http://127.0.0.1:16800/jsonrpc', 'an invalid port falls back rather than producing a broken URL'],
+  ]
+  const saved = { ...process.env }
+  for (const [env, expected, why] of cases) {
+    delete process.env.ARIA2_RPC_PORT
+    delete process.env.ARIA2_RPC_HOST
+    delete process.env.ARIA2_RPC_URL
+    Object.assign(process.env, env)
+    // The resolver is called per request, so re-reading the response is enough.
+    const res = fakeRes()
+    await route.handler(fakeReq(mod.API_PREFIX + '/tasks'), res)
+    const data = JSON.parse(res.state.body)
+    assert.equal(data.rpcUrl, expected, why)
+  }
+  // Restore.
+  for (const k of ['ARIA2_RPC_PORT', 'ARIA2_RPC_HOST', 'ARIA2_RPC_URL']) {
+    if (saved[k] === undefined) delete process.env[k]
+    else process.env[k] = saved[k]
+  }
+  console.log('PASS issue#1: RPC endpoint honours ARIA2_RPC_URL/HOST/PORT with the forwarder\'s defaults')
+}
+
+// --- issue #1: an unreachable endpoint is REPORTED, not hidden -----------
+{
+  // Every aria2 probe fails, so the live link is down while rows still exist.
+  const savedFetch = globalThis.fetch
+  globalThis.fetch = async () => { throw new Error('ECONNREFUSED') }
+  try {
+    const res = fakeRes()
+    await route.handler(fakeReq(mod.API_PREFIX + '/tasks'), res)
+    assert.equal(res.state.code, 200, 'the ledger still serves, it does not error')
+    const data = JSON.parse(res.state.body)
+    assert.equal(data.rpcReachable, false, 'the dead live link is reported')
+    assert.ok(data.tasks.length > 0, 'rows still come from the ledger fallback')
+    console.log('PASS issue#1: an unreachable engine is reported while the ledger still serves')
+  } finally {
+    globalThis.fetch = savedFetch
+  }
+}
+
+// --- issue #1: a reachable engine is reported as reachable ---------------
+{
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => ({ result: { status: 'active', totalLength: '10', completedLength: '5', downloadSpeed: '1' } }),
+  })
+  const res = fakeRes()
+  await route.handler(fakeReq(mod.API_PREFIX + '/tasks'), res)
+  const data = JSON.parse(res.state.body)
+  assert.equal(data.rpcReachable, true, 'a reachable engine is reported as reachable')
+  console.log('PASS issue#1: a reachable engine reports rpcReachable: true')
+}
+
 // --- unknown route ---
 {
   const res = fakeRes()

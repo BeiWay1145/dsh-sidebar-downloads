@@ -38,6 +38,10 @@ export interface TasksResponse {
   dirExists: boolean
   /** The ledger directory path, for the panel's message. */
   dir: string
+  /** False when the aria2 RPC did not answer, so progress is a stale snapshot. */
+  rpcReachable: boolean
+  /** The RPC endpoint that was tried, for the panel's message. */
+  rpcUrl: string
 }
 
 /** Thrown when a record referenced by a rendered row no longer exists. */

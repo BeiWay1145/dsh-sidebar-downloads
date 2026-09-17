@@ -92,6 +92,12 @@ export function DownloadsPanel({ visible }: PanelProps) {
   // Whether the ledger directory exists. Undefined until the first response.
   const [ledgerMissing, setLedgerMissing] = useState<{ dir: string } | null>(null)
   /**
+   * Set when the aria2 RPC did not answer. Every row is then a stale ledger
+   * snapshot, so the panel says so rather than showing frozen numbers that look
+   * like a hung download — the failure mode a wrong port used to hide behind.
+   */
+  const [rpcDown, setRpcDown] = useState<{ url: string } | null>(null)
+  /**
    * Transient, action-scoped notice (e.g. "that row's record is gone"). Kept
    * separate from `error` because it is informational and must not look like
    * a transport failure.
@@ -117,6 +123,7 @@ export function DownloadsPanel({ visible }: PanelProps) {
       const next = await api.tasks()
       setTasks(next.tasks)
       setLedgerMissing(next.dirExists === false ? { dir: next.dir } : null)
+      setRpcDown(next.rpcReachable === false ? { url: next.rpcUrl } : null)
       if (opts?.clearError === true) setError('')
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -266,6 +273,29 @@ export function DownloadsPanel({ visible }: PanelProps) {
           </button>
         </div>
       </div>
+
+      {/*
+        A persistent state banner, not a transient toast: while the engine is
+        unreachable EVERY row is a stale snapshot, so hiding this after a few
+        seconds would leave the user reading frozen numbers. Dismissing is not
+        offered for the same reason — the condition is not something the user
+        acknowledges away, it clears when the RPC starts answering.
+      */}
+      {rpcDown !== null && (
+        <div className={css.rpcDown} role="status">
+          <div className={css.rpcDownTitle}>aria2 连接不可达，进度为账本快照</div>
+          <div className={css.rpcDownHint}>
+            面板无法从引擎获取实时状态，因此进度/速度可能停在入队时的数值。
+            请确认引擎已在下面的地址监听：
+          </div>
+          <div className={css.emptyPath} title={rpcDown.url}>{rpcDown.url}</div>
+          <div className={css.rpcDownHint}>
+            若引擎使用其他端口，请设置环境变量 <code>ARIA2_RPC_PORT</code>
+            （或 <code>ARIA2_RPC_HOST</code> / <code>ARIA2_RPC_URL</code>）后重启 DSH。
+            该变量与 <code>aria2-dl.cjs</code> 使用同一套命名与默认值。
+          </div>
+        </div>
+      )}
 
       <div className={css.list}>
         {shown.length === 0 ? (

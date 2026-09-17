@@ -90,6 +90,27 @@
   border: 1px solid color-mix(in srgb, var(--dsw-alias-status-warning, #d4a72c) 35%, transparent);
 }
 
+/* Persistent state banner: the live link is down and rows are stale. */
+.rpcDown {
+  flex: 0 0 auto;
+  margin: 8px 12px 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--dsw-alias-status-warning, #d4a72c);
+  background: color-mix(in srgb, var(--dsw-alias-status-warning, #d4a72c) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-status-warning, #d4a72c) 35%, transparent);
+}
+.rpcDownTitle { font-weight: 600; margin-bottom: 4px; }
+.rpcDownHint { color: var(--dsw-alias-text-secondary, #9a9a9a); margin-top: 4px; }
+.rpcDown code {
+  font-family: var(--dsw-font-mono, ui-monospace, monospace);
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--dsw-alias-bg-secondary, rgba(128, 128, 128, 0.18));
+}
+
 /* ---- list ---- */
 .list {
   flex: 1 1 auto;

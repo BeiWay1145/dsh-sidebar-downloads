@@ -39,10 +39,36 @@ import { readFileSync, readdirSync, statSync, unlinkSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
-/** The local aria2-next RPC (Motrix Next's engine). Loopback only, no secret. */
-const ARIA2_RPC = 'http://127.0.0.1:16800/jsonrpc';
+/**
+ * The local aria2-next RPC endpoint (Motrix Next's engine; loopback, no secret).
+ *
+ * Configurable, and deliberately named to match the companion forwarder
+ * (`aria2-dl.cjs`), which reads the same variables. Both halves of the setup
+ * must point at the SAME engine: the forwarder enqueues on its port and this
+ * plugin polls status on it. When they disagreed, downloads succeeded but the
+ * panel was stuck on the one-shot enqueue record — reported as issue #1 on
+ * dsh-sidebar-downloads, where a non-16800 deployment looked like "the panel
+ * refreshes slowly" rather than "the RPC never connected".
+ *
+ * Default 16800 keeps Motrix Next working out of the box.
+ */
+function aria2RpcUrl(): string {
+  // An explicit full URL wins, so a non-loopback or proxied setup still works.
+  const explicit = process.env.ARIA2_RPC_URL
+  if (typeof explicit === 'string' && explicit.trim() !== '') return explicit.trim()
+  const host = process.env.ARIA2_RPC_HOST
+  const port = process.env.ARIA2_RPC_PORT
+  const resolvedHost = typeof host === 'string' && host.trim() !== '' ? host.trim() : '127.0.0.1'
+  const parsed = Number(port)
+  const resolvedPort = Number.isFinite(parsed) && parsed > 0 ? parsed : 16800
+  return 'http://' + resolvedHost + ':' + resolvedPort + '/jsonrpc'
+}
+
 /** Keep the panel responsive: a dead engine must not stall the task list. */
-const ARIA2_TIMEOUT_MS = 1500;
+function aria2TimeoutMs(): number {
+  const parsed = Number(process.env.ARIA2_RPC_TIMEOUT_MS)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1500
+}
 
 /** Minimal structural view of the two cordis services this half touches, so
  *  the package needs no dependency on the DSH type packages. */
@@ -104,29 +130,46 @@ interface Aria2Status {
   files?: { path?: string }[]
 }
 
+/** Outcome of one RPC attempt, so callers can tell "no engine" from "no such gid". */
+interface Aria2Probe {
+  /** The transfer's status, when the engine answered for this GID. */
+  status?: Aria2Status
+  /**
+   * False when the endpoint could not be reached at all (engine down, wrong
+   * port, timeout). Distinguished from `status === undefined` with
+   * `reachable === true`, which just means the engine does not know this GID.
+   */
+  reachable: boolean
+}
+
 /**
  * Ask the aria2 engine about one GID.
  *
- * Returns undefined when aria2 is not running, the GID is unknown (so the
- * transfer is long gone from its session), or the call is slow — in every one
- * of those cases the caller keeps the ledger's own numbers.
+ * Reachability is reported separately from the answer because the two mean
+ * different things to the panel: an unreachable engine means the live-progress
+ * link is DOWN and the row is a stale ledger snapshot, while an engine that
+ * answers "unknown gid" is simply done with a transfer from an earlier session.
+ * Collapsing both into `undefined` — as this did before — made a misconfigured
+ * port invisible.
  */
-async function aria2Status(gid: string): Promise<Aria2Status | undefined> {
+async function aria2Status(gid: string): Promise<Aria2Probe> {
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), ARIA2_TIMEOUT_MS)
+  const timer = setTimeout(() => controller.abort(), aria2TimeoutMs())
   try {
-    const res = await fetch(ARIA2_RPC, {
+    const res = await fetch(aria2RpcUrl(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', id: 'sidebar-downloads', method: 'aria2.tellStatus', params: [gid] }),
       signal: controller.signal,
     })
-    if (!res.ok) return undefined
+    // An HTTP error still proves something is listening and answering.
+    if (!res.ok) return { reachable: true }
     const body = (await res.json()) as { result?: Aria2Status }
-    return body.result
+    return { status: body.result, reachable: true }
   } catch {
-    // Engine down, aborted, or a non-JSON reply: fall back to the ledger.
-    return undefined
+    // Connection refused, aborted, DNS failure or a non-JSON reply: the engine
+    // is not usable for this call.
+    return { reachable: false }
   } finally {
     clearTimeout(timer)
   }
@@ -209,6 +252,17 @@ export interface LedgerState {
   dirExists: boolean
   /** The directory path, for the panel's diagnostic message. */
   dir: string
+  /**
+   * Whether the aria2 RPC answered on this poll.
+   *
+   * False means live progress is unavailable and every row is the ledger's
+   * stale snapshot — most often a misconfigured port. The panel surfaces this
+   * instead of silently showing frozen numbers, which is how a wrong port
+   * passed for "slow refresh".
+   */
+  rpcReachable: boolean
+  /** The endpoint that was tried, for the panel's diagnostic message. */
+  rpcUrl: string
 }
 
 /**
@@ -223,8 +277,9 @@ async function readTasks(): Promise<LedgerState> {
     entries = readdirSync(TASKS_DIR);
   } catch {
     // The directory is absent (or unreadable) — report that distinctly rather
-    // than as an empty list.
-    return { tasks: [], dirExists: false, dir: TASKS_DIR };
+    // than as an empty list. Reachability is not probed here: with no records
+    // there is nothing to enrich, so an RPC round-trip would only add latency.
+    return { tasks: [], dirExists: false, dir: TASKS_DIR, rpcReachable: false, rpcUrl: aria2RpcUrl() };
   }
   const tasks: TaskRecord[] = [];
   for (const name of entries) {
@@ -265,15 +320,23 @@ async function readTasks(): Promise<LedgerState> {
   // Refresh every aria2-backed record from the engine, which owns that
   // transfer's real state (see the header note on --no-wait records).
   const live = tasks.filter((t) => t.gid !== '');
+  // Assume reachable until a probe says otherwise: a ledger with no gid-bearing
+  // records never contacts the engine, and reporting "unreachable" there would
+  // be a claim we did not test.
+  let rpcReachable = true
   if (live.length > 0) {
-    const statuses = await Promise.all(live.map((t) => aria2Status(t.gid)));
+    const probes = await Promise.all(live.map((t) => aria2Status(t.gid)));
     for (let i = 0; i < live.length; i += 1) {
-      const status = statuses[i];
+      const probe = probes[i];
       const task = live[i];
-      if (status === undefined || task === undefined) continue;
-      const merged = mergeAria2(task, status);
-      const at = tasks.indexOf(task);
-      if (at >= 0) tasks[at] = merged;
+      if (probe === undefined || task === undefined) continue
+      // One unreachable probe is enough to report the link as down: they all
+      // target the same endpoint.
+      if (!probe.reachable) rpcReachable = false
+      if (probe.status === undefined) continue
+      const merged = mergeAria2(task, probe.status)
+      const at = tasks.indexOf(task)
+      if (at >= 0) tasks[at] = merged
     }
   }
   // Active first, then most recent.
@@ -283,7 +346,7 @@ async function readTasks(): Promise<LedgerState> {
     if (ra !== rb) return ra - rb;
     return (b.startedAt || b.endedAt || 0) - (a.startedAt || a.endedAt || 0);
   });
-  return { tasks, dirExists: true, dir: TASKS_DIR };
+  return { tasks, dirExists: true, dir: TASKS_DIR, rpcReachable, rpcUrl: aria2RpcUrl() };
 }
 
 /**
@@ -357,6 +420,10 @@ export function apply(ctx: PluginContext): void {
               // stale list or a misleading "no downloads".
               dirExists: ledger.dirExists,
               dir: ledger.dir,
+              // Lets the panel warn that progress is a stale snapshot because
+              // the live link is down (typically a wrong port).
+              rpcReachable: ledger.rpcReachable,
+              rpcUrl: ledger.rpcUrl,
             });
           }
 

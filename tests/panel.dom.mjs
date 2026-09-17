@@ -81,9 +81,20 @@ const mockFetch = async (url) => {
     const active = tasks.filter((t) => t.status === 'downloading' || t.status === 'starting' || t.status === 'probing').length
     // 'nosdir' models a ledger directory that has been removed.
     const dirExists = scenario !== 'nosdir'
+    // 'rpcdown' models a misconfigured port: the ledger is intact but the live
+    // status link is dead, so every row is a stale snapshot.
+    const rpcReachable = scenario !== 'rpcdown'
     return {
       ok: true,
-      json: async () => ({ ok: true, tasks: dirExists ? tasks : [], active, dirExists, dir: 'C:/Users/x/.dsh/downloads/tasks' }),
+      json: async () => ({
+        ok: true,
+        tasks: dirExists ? tasks : [],
+        active,
+        dirExists,
+        dir: 'C:/Users/x/.dsh/downloads/tasks',
+        rpcReachable,
+        rpcUrl: 'http://127.0.0.1:16800/jsonrpc',
+      }),
     }
   }
   if (u.indexOf('/reveal') >= 0) {
@@ -330,6 +341,29 @@ console.log('PASS empty: no-task ledger renders its empty state')
   assert.ok(!text.includes('暂无下载任务'), 'does not masquerade as an empty-but-healthy ledger')
   console.log('PASS missing-ledger: reported as lost files with the path, not as empty')
   scenario = 'live'
+}
+
+// ---- a dead RPC link is announced, not silently shown as frozen data ----
+// Regression: a wrong port left the panel displaying the one-shot enqueue
+// record (0%) with no indication that live progress was unavailable, which
+// reads as "the download is stuck" rather than "the endpoint is wrong".
+{
+  scenario = 'rpcdown'
+  await mountFresh()
+
+  const text = container.textContent
+  assert.ok(text.includes('aria2 连接不可达'), 'the panel announces the dead live link')
+  assert.ok(text.includes('127.0.0.1:16800'), 'the tried endpoint is shown for diagnosis')
+  assert.ok(text.includes('ARIA2_RPC_PORT'), 'the user is told which setting to change')
+  // The rows must still render from the ledger fallback.
+  assert.ok(text.includes('ubuntu.iso'), 'rows still come from the ledger fallback')
+  console.log('PASS rpc-down: a dead engine is announced with the endpoint and the setting')
+
+  // And it must clear once the engine answers again.
+  scenario = 'live'
+  await mountFresh()
+  assert.ok(!container.textContent.includes('aria2 连接不可达'), 'the banner clears when the RPC answers')
+  console.log('PASS rpc-down: the banner clears once the engine is reachable')
 }
 
 await act(async () => { root.unmount() })
